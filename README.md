@@ -11,8 +11,7 @@ Modern dark mode router portal with network management, VPN bypass, MAC spoofing
 • Real-time firewall rule viewer (iptables + nftables)
 • Wi-Fi network scanning and connection
 • System monitoring with temperature and uptime
-• Beautiful dark mode UI with custom widgets
-• Wave background animation
+• Dark mode UI with custom widgets
 • Sidebar navigation with active state indicators
 • Requires root for full functionality
 
