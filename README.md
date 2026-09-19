@@ -1,5 +1,7 @@
 # WAVE-BRIDGE
-Modern dark mode router portal with network management, VPN bypass, MAC spoofing, and internet sharing
+Modern dark mode router portal with network management, VPN bypass, MAC spoofing, and internet sharing specifically designed for Raspberry PI to work as a router
+and should work on any other linux setup. Choose your upstream and downstream source(s) while having capabilities to run a TOR node connection for privacy.
+
 <img width="1179" height="804" alt="image" src="https://github.com/user-attachments/assets/5f7d1103-5d8e-41fa-ae2d-8a7b54948937" />
 
 ✨ Features:
