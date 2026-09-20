@@ -19,7 +19,9 @@ CATEGORY_DOMAINS = {
     "Ads & Trackers": ["doubleclick.net", "google-analytics.com", "scorecardresearch.com", "quantserve.com", "outbrain.com", "taboola.com", "adservice.google.com", "facebook.com", "facebook.net", "fbcdn.net"],
     "Malware": ["malware-traffic-analysis.net", "badssl.com", "testsafebrowsing.appspot.com", "exploit-db.com"],
     "Suspicious Websites": ["bit.ly", "tinyurl.com", "t.co", "ow.ly", "shorturl.at", "is.gd", "bit.do"],
-    "Adult Content": ["pornhub.com", "xvideos.com", "xnxx.com", "onlyfans.com", "xhamster.com", "brazzers.com", "chaturbate.com"]
+    "Adult Content": ["pornhub.com", "xvideos.com", "xnxx.com", "onlyfans.com", "xhamster.com", "brazzers.com", "chaturbate.com"],
+    # CRITICAL: Blocks DNS over HTTPS to prevent browsers from bypassing your Pi's DNS blocks
+    "DNS over HTTPS (DoH)": ["dns.google", "cloudflare-dns.com", "mozilla.cloudflare-dns.com", "dns.quad9.net", "doh.opendns.com", "familyshield.opendns.com", "dns.adguard.com", "chrome.cloudflare-dns.com", "firefox.dns.nextdns.io", "doh.dns.apple.com"]
 }
 
 BLOCKLIST_FILE = "/etc/dnsmasq.d/portmaster_block.conf"
@@ -29,7 +31,6 @@ BLOCKLIST_FILE = "/etc/dnsmasq.d/portmaster_block.conf"
 # ==========================================
 class NetworkManager:
     def __init__(self):
-        self.blocked_ips = set()
         self.engine_active = self._check_engine()
 
     def _run_cmd(self, cmd, shell=False):
@@ -103,9 +104,6 @@ class NetworkManager:
         self._run_cmd("iptables -X PI_NETMASTER_FWD || true", shell=True)
         self._run_cmd("iptables -D FORWARD -j PI_NETMASTER_FWD || true", shell=True)
         
-        self._run_cmd("iptables -F FORWARD", shell=True)
-        self._run_cmd("iptables -F OUTPUT", shell=True)
-        
         if os.path.exists(BLOCKLIST_FILE): 
             os.remove(BLOCKLIST_FILE)
         self._run_cmd(["systemctl", "restart", "dnsmasq"])
@@ -121,7 +119,7 @@ class PiNetMasterApp(ctk.CTk):
             sys.exit(1)
 
         self.title("Pi NetMaster - Router & Firewall")
-        self.geometry("1100x850")
+        self.geometry("1150x900")
         self.minsize(900, 650)
         self.resizable(True, True)
         
@@ -186,7 +184,6 @@ class PiNetMasterApp(ctk.CTk):
         
         ctk.CTkLabel(scroll_frame, text="Network Bridge & Sharing", font=ctk.CTkFont(size=24, weight="bold"), anchor="w").pack(pady=20, padx=20, fill="x")
         
-        # Router Engine Status
         status_frame = ctk.CTkFrame(scroll_frame, fg_color="#1E1E1E", corner_radius=8)
         status_frame.pack(pady=(0, 15), padx=20, fill="x")
         self.lbl_engine_status = ctk.CTkLabel(status_frame, text="", font=ctk.CTkFont(size=14, weight="bold"))
@@ -231,17 +228,32 @@ class PiNetMasterApp(ctk.CTk):
         # 4. Downstream Specific Config (Dynamic)
         self.downstream_config_frame = ctk.CTkFrame(scroll_frame, fg_color="#1E1E1E", corner_radius=10)
         
-        # 5. VPN Routing & Bypass Configuration
+        # 5. DNS Configuration (NEW)
+        dns_frame = ctk.CTkFrame(scroll_frame, fg_color="#1E1E1E", corner_radius=10)
+        dns_frame.pack(pady=10, padx=20, fill="x")
+        ctk.CTkLabel(dns_frame, text="5. DNS Configuration for Downstream Clients", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=10)
+        ctk.CTkLabel(dns_frame, text="Controls how DNS requests from downstream devices are handled.", text_color="#888888", font=ctk.CTkFont(size=12)).pack(padx=20, fill="x")
+        
+        self.dns_mode_var = ctk.StringVar(value="Enforce Pi DNS (Recommended)")
+        ctk.CTkComboBox(dns_frame, values=[
+            "Enforce Pi DNS (Recommended)", 
+            "Allow Client DNS (No Blocks)", 
+            "Force Custom DNS"
+        ], variable=self.dns_mode_var, command=self._on_dns_mode_change).pack(padx=20, pady=5, fill="x")
+        
+        self.custom_dns_var = ctk.StringVar()
+        self.entry_custom_dns = ctk.CTkEntry(dns_frame, placeholder_text="Custom DNS IP (e.g., 1.1.1.1)", textvariable=self.custom_dns_var, state="disabled")
+        
+        # 6. VPN Routing & Bypass Configuration
         vpn_frame = ctk.CTkFrame(scroll_frame, fg_color="#1E1E1E", corner_radius=10)
         vpn_frame.pack(pady=10, padx=20, fill="x")
-        ctk.CTkLabel(vpn_frame, text="4. VPN Routing & Bypass Configuration", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=10)
+        ctk.CTkLabel(vpn_frame, text="6. VPN Routing & Bypass Configuration", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=10)
         
         ctk.CTkLabel(vpn_frame, text="Force Downstream Traffic Through VPN:", anchor="w").pack(padx=20, fill="x")
         self.vpn_var = ctk.StringVar(value="None (Use Direct Upstream)")
         ctk.CTkComboBox(vpn_frame, values=self._get_vpn_interfaces(), variable=self.vpn_var).pack(padx=20, pady=5, fill="x")
         
         ctk.CTkLabel(vpn_frame, text="Bypass VPN for Specific Interface (e.g., Work PC):", anchor="w").pack(padx=20, pady=(15,0), fill="x")
-        ctk.CTkLabel(vpn_frame, text="Traffic from this downstream interface will ignore the VPN and use the direct upstream.", text_color="#888888", font=ctk.CTkFont(size=12)).pack(padx=20, fill="x")
         self.bypass_var = ctk.StringVar(value="None (All use VPN)")
         ctk.CTkComboBox(vpn_frame, values=["None (All use VPN)"] + self.interfaces, variable=self.bypass_var).pack(padx=20, pady=5, fill="x")
         
@@ -272,6 +284,14 @@ class PiNetMasterApp(ctk.CTk):
         else:
             self.entry_specific_mac.configure(state="disabled")
             self.entry_specific_mac.pack_forget()
+
+    def _on_dns_mode_change(self, value):
+        if value == "Force Custom DNS":
+            self.entry_custom_dns.configure(state="normal")
+            self.entry_custom_dns.pack(padx=20, pady=5, fill="x")
+        else:
+            self.entry_custom_dns.configure(state="disabled")
+            self.entry_custom_dns.pack_forget()
 
     def _update_downstream_config_ui(self):
         for widget in self.downstream_config_frame.winfo_children(): widget.destroy()
@@ -314,6 +334,8 @@ class PiNetMasterApp(ctk.CTk):
         selected_ds = [iface for iface, var in self.downstream_vars.items() if var.get()]
         vpn_iface = self.vpn_var.get()
         bypass_iface = self.bypass_var.get()
+        dns_mode = self.dns_mode_var.get()
+        custom_dns = self.custom_dns_var.get().strip()
         
         if not selected_ds: return messagebox.showerror("Error", "Please select at least one Downstream interface.")
         if upstream in selected_ds: return messagebox.showerror("Error", "Upstream and Downstream interfaces cannot be the same.")
@@ -334,7 +356,6 @@ class PiNetMasterApp(ctk.CTk):
         dnsmasq_lines = []
         
         for iface in selected_ds:
-            # Determine the correct outbound interface for this specific downstream
             current_out_iface = out_iface_bypass if iface == bypass_iface else out_iface_vpn
 
             mac_mode = self.mac_mode_var.get()
@@ -346,6 +367,14 @@ class PiNetMasterApp(ctk.CTk):
                     if len(mac) == 17: cmds.append(f"macchanger --mac={mac} {iface}")
                 cmds.append(f"ip link set {iface} up")
                 cmds.append("sleep 1")
+
+            # DNS ENFORCEMENT RULES
+            if dns_mode == "Enforce Pi DNS (Recommended)":
+                cmds.append(f"iptables -t nat -A PREROUTING -i {iface} -p udp --dport 53 -j REDIRECT --to-ports 53")
+                cmds.append(f"iptables -t nat -A PREROUTING -i {iface} -p tcp --dport 53 -j REDIRECT --to-ports 53")
+            elif dns_mode == "Force Custom DNS" and custom_dns:
+                cmds.append(f"iptables -t nat -A PREROUTING -i {iface} -p udp --dport 53 -j DNAT --to-destination {custom_dns}:53")
+                cmds.append(f"iptables -t nat -A PREROUTING -i {iface} -p tcp --dport 53 -j DNAT --to-destination {custom_dns}:53")
 
             if iface.startswith("wlan"):
                 ssid = self.ap_ssid_var.get().strip()
@@ -361,8 +390,7 @@ class PiNetMasterApp(ctk.CTk):
                 cmds.append(f"nmcli connection delete Hotspot || true")
                 cmds.append(f"nmcli connection delete 'Hotspot 1' || true")
                 cmds.append(f"nmcli device wifi hotspot ifname {iface} ssid '{ssid}' password '{password}' band {band}")
-                cmds.append(f"nmcli connection modify Hotspot ipv4.dns '127.0.0.1' || true")
-                cmds.append(f"nmcli connection modify 'Hotspot 1' ipv4.dns '127.0.0.1' || true")
+                # Let nmcli assign the correct gateway IP for DNS, do NOT hardcode 127.0.0.1
                 cmds.append(f"nmcli connection up Hotspot || nmcli connection up 'Hotspot 1'")
                 
                 cmds.append(f"iptables -t nat -A PI_NETMASTER -s 10.42.0.0/24 -o {current_out_iface} -j MASQUERADE")
@@ -389,7 +417,7 @@ class PiNetMasterApp(ctk.CTk):
                 cmds.append(f"iptables -A PI_NETMASTER_FWD -i {current_out_iface} -o {iface} -m state --state RELATED,ESTABLISHED -j ACCEPT")
 
         if dnsmasq_lines:
-            dnsmasq_lines.append("bind-interfaces")
+            # REMOVED bind-interfaces so dnsmasq listens on ALL interfaces (including Wi-Fi hotspots)
             try:
                 os.makedirs("/etc/dnsmasq.d", exist_ok=True)
                 with open("/etc/dnsmasq.d/pi-bridge.conf", "w") as f:
@@ -408,7 +436,7 @@ class PiNetMasterApp(ctk.CTk):
         bypass_text = f" (Bypassing VPN for {bypass_iface})" if bypass_iface != "None (All use VPN)" else ""
         self.bridge_status.set(f"Status: ON ({ds_names} -> {out_iface_vpn}){bypass_text}")
         self.btn_share_on.configure(state="normal")
-        messagebox.showinfo("Success", f"Internet sharing is ON.\n\nDownstream: {ds_names}\nRouting via: {out_iface_vpn}{bypass_text}")
+        messagebox.showinfo("Success", f"Internet sharing is ON.\n\nDownstream: {ds_names}\nRouting via: {out_iface_vpn}{bypass_text}\nDNS Mode: {dns_mode}")
 
     def toggle_bridge_off(self):
         selected_ds = [iface for iface, var in self.downstream_vars.items() if var.get()]
@@ -421,6 +449,12 @@ class PiNetMasterApp(ctk.CTk):
             "iptables -X PI_NETMASTER_FWD || true",
         ]
         for iface in selected_ds:
+            # Clean up DNS redirect rules
+            cmds.append(f"iptables -t nat -D PREROUTING -i {iface} -p udp --dport 53 -j REDIRECT || true")
+            cmds.append(f"iptables -t nat -D PREROUTING -i {iface} -p tcp --dport 53 -j REDIRECT || true")
+            cmds.append(f"iptables -t nat -D PREROUTING -i {iface} -p udp --dport 53 -j DNAT || true")
+            cmds.append(f"iptables -t nat -D PREROUTING -i {iface} -p tcp --dport 53 -j DNAT || true")
+            
             if iface.startswith("wlan"):
                 cmds.append("nmcli connection delete Hotspot || true")
                 cmds.append("nmcli connection delete 'Hotspot 1' || true")
@@ -481,9 +515,18 @@ class PiNetMasterApp(ctk.CTk):
             
             header_frame = ctk.CTkFrame(frame, fg_color="transparent")
             header_frame.pack(fill="x", padx=15, pady=10)
+            
             ctk.CTkCheckBox(header_frame, text=f"Block {company}", variable=main_var, 
                             command=lambda c=company: self._toggle_company_domains(c),
                             font=ctk.CTkFont(size=16, weight="bold")).pack(side="left")
+            
+            # Select All / Clear All Buttons
+            btn_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
+            btn_frame.pack(side="right")
+            ctk.CTkButton(btn_frame, text="Select All", width=80, height=28, font=ctk.CTkFont(size=12),
+                          command=lambda c=company: self._select_all_domains(c, True)).pack(side="left", padx=2)
+            ctk.CTkButton(btn_frame, text="Clear All", width=80, height=28, font=ctk.CTkFont(size=12), fg_color="#D32F2F", hover_color="#B71C1C",
+                          command=lambda c=company: self._select_all_domains(c, False)).pack(side="left", padx=2)
             
             domain_frame = ctk.CTkFrame(frame, fg_color="#252525", corner_radius=8)
             self.company_frames[company] = domain_frame
@@ -521,10 +564,18 @@ class PiNetMasterApp(ctk.CTk):
     def _toggle_company_domains(self, company):
         is_enabled = self.company_vars[company].get()
         if is_enabled:
+            # Master checkbox checks ALL domains
+            for d_var in self.domain_vars[company].values(): d_var.set(True)
             self.company_frames[company].pack(fill="x", padx=15, pady=(0, 15))
         else:
-            self.company_frames[company].pack_forget()
+            # Master checkbox unchecks ALL domains
             for d_var in self.domain_vars[company].values(): d_var.set(False)
+            self.company_frames[company].pack_forget()
+        self._update_company_blocklist(company)
+
+    def _select_all_domains(self, company, select_all):
+        for d_var in self.domain_vars[company].values():
+            d_var.set(select_all)
         self._update_company_blocklist(company)
 
     def _update_company_blocklist(self, company):
