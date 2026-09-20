@@ -75,14 +75,14 @@ pip3 install customtkinter
 ### 3. Clone or download the project
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/pi-netmaster.git
-cd pi-netmaster
+git clone https://github.com/Bynetripper/NET-BRIDGE.git
+cd NET-BRIDGE
 ```
 
 ### 4. Run the application
 
 ```bash
-sudo python3 pi_netmaster.py
+sudo python3 console.py
 ```
 
 > **Note:** Root privileges are required because the app modifies `iptables` firewall rules, `dnsmasq` DNS configuration, and network interface settings.
